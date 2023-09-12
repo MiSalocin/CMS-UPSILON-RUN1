@@ -4,56 +4,29 @@
 #include "TFile.h"
 #include "TCanvas.h"
 #include "TLegend.h"
-#include "TTreeReaderArray.h"
+#include "THStack.h"
+#include "RooPlot.h"
 #include "RooRealVar.h"
 #include "RooHistPdf.h"
 #include "RooAddPdf.h"
-#include "RooPlot.h"
+#include "TTreeReaderArray.h"
+
+#include "datatypes.h"
 
 using namespace std;
 using namespace RooFit;
 
-// Create a structure that holds the data and sample in organized form
-struct dataStruct {
-    int    type;
-    string name;
-    Double_t weight;
-    Color_t color;
-    string legend;
-};
-
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
 // FITTING SELECTION
-// Sample and mass region
-const string toBeFitted = "PtPair_SIDEB";
+// Distribution and mass region
+const string sampleName = "PtPair";
+const string mass = "RESOM";
+
+const sampleStruct selSample = samples[sampleName];
 
 // File with data
 const char* datafile = "dataFile.root";
-
-///////////////////////////////////////////////////////////////////////////////////////////////
-
-// INTEGRATED LUMI OBTAINED WITH pixelLumiCalc:
-const Double_t INTEGRATED_LUMI = 937. ;
-
-// Variables that holds the weights for each data
-// CONTINUUM BKG:
-Double_t WEIGHT_DYmumu   = INTEGRATED_LUMI / 1.5e6   * 1320.  * 2.;
-Double_t WEIGHT_DYmumuL  = INTEGRATED_LUMI / 1e5     * 13.94;
-Double_t WEIGHT_DYmumuH  = INTEGRATED_LUMI / 2966364 * 1297.;
-Double_t WEIGHT_inelinel = INTEGRATED_LUMI / 1e5     * 17.902;
-Double_t WEIGHT_inelel   = INTEGRATED_LUMI / 1e5     * 15.398 * 2.;
-Double_t WEIGHT_elel     = INTEGRATED_LUMI / 1e5     * 31.220 * 0.938985;
-
-// RESONANT BKG:
-Double_t WEIGHT_inclY1S  = INTEGRATED_LUMI / 2183761 * 78963. * 0.15080;
-Double_t WEIGHT_inclY2S  = INTEGRATED_LUMI / 1065233 * 58961. * 0.08386 * 0.4;
-Double_t WEIGHT_inclY3S  = INTEGRATED_LUMI / 533761  * 11260. * 0.57950 * 0.4;
-
-// SIGNAL:
-Double_t WEIGHT_signal1  = INTEGRATED_LUMI / 1e5 * 542.710 * 0.025 * 0.651 * 0.534879;
-Double_t WEIGHT_signal2  = INTEGRATED_LUMI / 1e5 * 234.240 * 0.019 * 0.690 * 0.534879;
-Double_t WEIGHT_signal3  = INTEGRATED_LUMI / 1e5 * 163.700 * 0.022 * 0.710 * 0.534879;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -63,7 +36,7 @@ const dataStruct dataset[12] = {
         {0, "dymumuL" ,WEIGHT_DYmumuL ,2  ,"PYTHIA mid-mass Drell-Yan #mu^{+}#mu^{-}"},
         {0, "dymumuH" ,WEIGHT_DYmumuH ,2  ,"PYTHIA high-mass Drell-Yan #mu^{+}#mu^{-}"},
         {0, "inelinel",WEIGHT_inelinel,419,"LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (double dissociation)"},
-        {0, "inelel"  ,WEIGHT_inelel    ,30 ,"LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (single dissociation)"},
+        {0, "inelel"  ,WEIGHT_inelel  ,30 ,"LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (single dissociation)"},
         {1, "elel"    ,WEIGHT_elel    ,800,"LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (elastic)"},
         {0, "inclY1S" ,WEIGHT_inclY1S ,5  ,"PYTHIA/EvtGen Z2 #Upsilon(nS) #rightarrow #mu^{+}#mu^{-}"},
         {0, "inclY2S" ,WEIGHT_inclY2S ,5 },
@@ -82,7 +55,7 @@ void Fit() {
 
     // Read the experimental data and create a histogram out of it
     unique_ptr<TFile> dataCluster(TFile::Open(datafile));
-    string file = toBeFitted + "_" + "data";
+    string file = sampleName + "_" + mass + "_data";
     auto *dataHist(dataCluster->Get<TH1>(file.c_str()));
 
     // Get the max value of the x-axis
@@ -101,10 +74,10 @@ void Fit() {
 
     // Fill the histograms
     for (const dataStruct& simData : dataset) {
-        file = toBeFitted + "_" + simData.name;
+        file = sampleName + "_" + mass + "_" + simData.name;
         auto h =dataCluster->Get<TH1>(file.c_str());
         h->Scale(simData.weight);
-        if (simData.type == 0)
+        if (simData.isUsed == 0)
             disHist->Add(h);
         else
             excHist->Add(h);
@@ -133,16 +106,62 @@ void Fit() {
 
     // Print the resulting values
     cout << endl << "----------------------------------------" << endl;
-    cout << "Exclusive fit scale result: " << excFitResult.getVal() / (excHist->Integral()) << endl;
-    cout << "Dissociative fit scale result: " << disFitResult.getVal() / (disHist->Integral()) << endl;
+    cout << "Exclusive fit scale result: "    << excFitResult.getVal() / excHist->Integral() << endl;
+    cout << "Dissociative fit scale result: " << disFitResult.getVal() / disHist->Integral() << endl;
     cout <<"----------------------------------------" <<  endl << endl;
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+
+    auto legend = new TLegend(0.45,.68,.88,0.87);
+    legend->SetBorderSize(0);
+    legend->SetTextSize(0.027);
+    auto *histStack = new THStack(sampleName.c_str(),
+                          string(sampleName + "_" + mass + ";" + selSample.description + " (" + selSample.unit + ")").c_str());
+
+    dataHist->SetMarkerStyle(20);
+    dataHist->SetLineColor(kBlack);
+    legend->AddEntry(dataHist, "Data", "lp");
+
+    // Create a stack of histograms containing the generated datasets
+    for (const auto & simData : dataset) {
+        file = sampleName + "_" + mass + "_" + simData.name;
+        TH1 *h(dataCluster->Get<TH1>(file.c_str()));
+
+        // If the histogram is empty, skit it
+        if (h->Integral() == 0)
+            continue;
+
+        // Personalize the histogram
+        h->SetLineColor(kBlack);
+        if (simData.isUsed == 0) h->Scale(disFitResult.getVal() / disHist->Integral());
+        else h->Scale(excFitResult.getVal() / excHist->Integral());
+        h->SetFillColor(simData.color);
+
+        // Add a legend to the histogram (if its needed)
+        if (!simData.legend.empty())
+            legend->AddEntry(h, simData.legend.c_str(), "f");
+
+        // Add the histogram to a stack
+        histStack->Add(h);
+    }
+
+    if (histStack->GetMaximum() < dataHist->GetMaximum() + dataHist->GetBinError(dataHist->GetMaximumBin()) * 1.3)
+        histStack->SetMaximum(dataHist->GetMaximum() + dataHist->GetBinError(dataHist->GetMaximumBin()) * 1.3);
+    dataHist  ->Draw("e1x0p SAME");
+    histStack->Draw("HIST");
 
     // Plot the data and resulting fit histogram
     RooPlot* xFrame = x.frame(Title("Fitting result"));
-    data.plotOn(xFrame, XErrorSize(0));
-    model.plotOn(xFrame, LineWidth(1));
-    xFrame->Draw();
+    data.plotOn(xFrame, XErrorSize(0), DrawOption("P"));
+    model.plotOn(xFrame, LineWidth(3));
+    xFrame->Draw("SAME");
+
+    // Draw the legend and plot the graph
+    legend->Draw("SAME");
 
     // Save the plots
-    c->SaveAs("fitHist.png");
+    c->SaveAs("./fitHist.png");
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+
 }
