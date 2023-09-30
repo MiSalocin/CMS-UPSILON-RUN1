@@ -15,18 +15,18 @@ using namespace std;
 
 // Datasets
 const dataStruct dataset[12] = {
-    {1, "dymumu"  , WEIGHT_DYmumu  , 2   , "PYTHIS Low-mass Drell-Yan #mu^{+}#mu^{-}"},
-    {1, "dymumuL" , WEIGHT_DYmumuL , 2   , "PYTHIA mid-mass Drell-Yan #mu^{+}#mu^{-}"},
-    {1, "dymumuH" , WEIGHT_DYmumuH , 2   , "PYTHIA high-mass Drell-Yan #mu^{+}#mu^{-}"},
-    {1, "inelinel", WEIGHT_inelinel, 419 , "LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (double dissociation)"},
-    {1, "inelel"  , WEIGHT_inelel  , 30  , "LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (single dissociation)"},
-    {1, "elel"    , WEIGHT_elel    , 800 , "LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (elastic)"},
-    {1, "inclY1S" , WEIGHT_inclY1S , 5   , "PYTHIA/EvtGen Z2 #Upsilon(nS) #rightarrow #mu^{+}#mu^{-}"},
-    {1, "inclY2S" , WEIGHT_inclY2S , 5  },
-    {1, "inclY3S" , WEIGHT_inclY3S , 5  },
-    {1, "signal1" , WEIGHT_signal1 , 40  , "STARLIGHT #gamma p #rightarrow#Upsilon(nS) p #rightarrow #mu^{+}#mu^{-} (elast)"},
-    {1, "signal2" , WEIGHT_signal2 , 40 },
-    {1, "signal3" , WEIGHT_signal3 , 40}};
+        {1, "dymumu"  , WEIGHT_DYmumu  , 2   , "PYTHIS Low-mass Drell-Yan #mu^{+}#mu^{-}"},
+        {1, "dymumuL" , WEIGHT_DYmumuL , 2   , "PYTHIA mid-mass Drell-Yan #mu^{+}#mu^{-}"},
+        {1, "dymumuH" , WEIGHT_DYmumuH , 2   , "PYTHIA high-mass Drell-Yan #mu^{+}#mu^{-}"},
+        {1, "inelinel", WEIGHT_inelinel, 419 , "LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (double dissociation)"},
+        {1, "inelel"  , WEIGHT_inelel  , 30  , "LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (single dissociation)"},
+        {1, "elel"    , WEIGHT_elel    , 800 , "LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (elastic)"},
+        {1, "inclY1S" , WEIGHT_inclY1S , 5   , "PYTHIA/EvtGen Z2 #Upsilon(nS) #rightarrow #mu^{+}#mu^{-}"},
+        {1, "inclY2S" , WEIGHT_inclY2S , 5  },
+        {1, "inclY3S" , WEIGHT_inclY3S , 5  },
+        {1, "signal1" , WEIGHT_signal1 , 40  , "STARLIGHT #gamma p #rightarrow#Upsilon(nS) p #rightarrow #mu^{+}#mu^{-} (elast)"},
+        {1, "signal2" , WEIGHT_signal2 , 40 },
+        {1, "signal3" , WEIGHT_signal3 , 40}};
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -64,9 +64,12 @@ void Graph(const string& outputFolder = "./Plots/",
             // Config legend proprieties
             auto legend = new TLegend(0.45,.68,.88,0.87);
             legend->SetBorderSize(0);
-			legend->SetTextSize(0.027);
-            auto *histStack = new THStack(sample.title.c_str(),
-                                  string(j.first + "_" + i + ";" + sample.description + " (" + sample.unit + ")").c_str());
+            legend->SetTextSize(0.027);
+            THStack *histStack;
+            if (sample.unit.empty()) histStack = new THStack(sample.title.c_str(),
+                                                             string(j.first + "_" + i + ";" + sample.description + " (" + sample.unit + ")").c_str());
+            else histStack = new THStack(sample.title.c_str(),
+                                         string(j.first + "_" + i + ";" + sample.description).c_str());
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -114,7 +117,7 @@ void Graph(const string& outputFolder = "./Plots/",
 
             // If there is, check if either the expeimental or the generated data is empty and print only one histogram
             else if (histStack->GetMaximum() == histStack->GetMinimum()) {
-				//expData->SetStats(0);
+                //expData->SetStats(0);
                 expData->Draw("");
             } else if (expData->Integral() == 0)
                 histStack->Draw("HIST");

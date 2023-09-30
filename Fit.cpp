@@ -4,12 +4,12 @@
 #include "TFile.h"
 #include "TCanvas.h"
 #include "TLegend.h"
-#include "THStack.h"
 #include "RooPlot.h"
 #include "RooRealVar.h"
 #include "RooHistPdf.h"
 #include "RooAddPdf.h"
 #include "TTreeReaderArray.h"
+#include "RooGenericPdf.h"
 
 #include "datatypes.h"
 
@@ -32,23 +32,44 @@ const char* datafile = "dataFile.root";
 
 // DATASETS
 const dataStruct dataset[12] = {
-        {0, "dymumu"  ,WEIGHT_DYmumu  ,2  ,"PYTHIS Low-mass Drell-Yan #mu^{+}#mu^{-}"},
-        {0, "dymumuL" ,WEIGHT_DYmumuL ,2  ,"PYTHIA mid-mass Drell-Yan #mu^{+}#mu^{-}"},
-        {0, "dymumuH" ,WEIGHT_DYmumuH ,2  ,"PYTHIA high-mass Drell-Yan #mu^{+}#mu^{-}"},
-        {0, "inelinel",WEIGHT_inelinel,419,"LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (double dissociation)"},
-        {0, "inelel"  ,WEIGHT_inelel  ,30 ,"LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (single dissociation)"},
-        {1, "elel"    ,WEIGHT_elel    ,800,"LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (elastic)"},
-        {0, "inclY1S" ,WEIGHT_inclY1S ,5  ,"PYTHIA/EvtGen Z2 #Upsilon(nS) #rightarrow #mu^{+}#mu^{-}"},
+
+        {0, "dymumu"  ,WEIGHT_DYmumu  ,2  ,
+                "PYTHIS Low-mass Drell-Yan #mu^{+}#mu^{-}"},
+
+        {0, "dymumuL" ,WEIGHT_DYmumuL ,2  ,
+                "PYTHIA mid-mass Drell-Yan #mu^{+}#mu^{-}"},
+
+        {0, "dymumuH" ,WEIGHT_DYmumuH ,2  ,
+                "PYTHIA high-mass Drell-Yan #mu^{+}#mu^{-}"},
+
+        {0, "inelinel",WEIGHT_inelinel,419,
+                "LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (double dissociation)"},
+
+        {0, "inelel"  ,WEIGHT_inelel  ,30 ,
+                "LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (single dissociation)"},
+
+        {1, "elel"    ,WEIGHT_elel    ,800,
+                "LPAIR #gamma#gamma #rightarrow #mu^{+}#mu^{-} (elastic)"},
+
+        {0, "inclY1S" ,WEIGHT_inclY1S ,5  ,
+                "PYTHIA/EvtGen Z2 #Upsilon(nS) #rightarrow #mu^{+}#mu^{-}"},
+
         {0, "inclY2S" ,WEIGHT_inclY2S ,5 },
+
         {0, "inclY3S" ,WEIGHT_inclY3S ,5 },
-        {1, "signal1" ,WEIGHT_signal1 ,40 ,"STARLIGHT #gamma p #rightarrow#Upsilon(nS) p #rightarrow #mu^{+}#mu^{-} (elast)"},
+
+        {1, "signal1" ,WEIGHT_signal1 ,40 ,
+                "STARLIGHT #gamma p #rightarrow#Upsilon(nS) p #rightarrow #mu^{+}#mu^{-} (elast)"},
+
         {1, "signal2" ,WEIGHT_signal2 ,40},
+
         {1, "signal3" ,WEIGHT_signal3 ,40}};
+
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
 void Fit() {
-
+    sampleStruct sample = samples[sampleName];
     // Create an output canvas
     auto *c = new TCanvas("canvas", "canvas", 1800, 1000);
     c->SetTicks();
@@ -59,16 +80,18 @@ void Fit() {
     auto *dataHist(dataCluster->Get<TH1>(file.c_str()));
 
     // Get the max value of the x-axis
-    Double_t upperLimit = dataHist->GetBinCenter(dataHist->GetNbinsX()) + dataHist->GetBinWidth(dataHist->GetNbinsX()) / 2;
+    Double_t upperLimit = dataHist->GetBinCenter(dataHist->GetNbinsX()) +
+                          dataHist->GetBinWidth(dataHist->GetNbinsX()) / 2;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
     // Create three RooFit variables, one generic and two that will hold the fitting values
-    RooRealVar x("x", "x", 0, upperLimit);
-    RooRealVar disFitResult("DisFit", "Value", 0.5, 0, 1000);
-    RooRealVar excFitResult("ExcFit", "NV", 5, 0, 1000);
+    const char *title;
+    if (sample.unit.empty()) title = string(sample.description + " (" + sample.unit + ")").c_str();
+    else                     title = string(sample.description).c_str();
+    RooRealVar x("x", title, 0, upperLimit);
 
-    // Create two empty histograms that holds the exclusive and dissociative data
+    // Create two empty histograms that hold the exclusive and dissociative data
     auto excHist = new TH1F("excHist", "Exclusive", dataHist->GetNbinsX(), 0, upperLimit);
     auto disHist = new TH1F("disHist", "Dissociative", dataHist->GetNbinsX(), 0, upperLimit);
 
@@ -81,7 +104,6 @@ void Fit() {
             disHist->Add(h);
         else
             excHist->Add(h);
-
     }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -95,73 +117,79 @@ void Fit() {
     RooHistPdf excPDF("excPdf", "Exclusive PDF", x, exc);
     RooHistPdf disPDF("disPdf", "Dissociative PDF", x, dis);
 
-    // Create a model that will fit the data using the histograms templates
-    RooAddPdf model("model", "Model", RooArgList(excPDF, disPDF),
-                    RooArgList(excFitResult, disFitResult));
+    // Create a model that will fit the data using the histogram templates
+    RooRealVar excScale("excScale", "Exclusive scale", 5, 0, 1000);
+    RooRealVar disScale("disScale", "Dissociative scale", 5, 0, 1000);
+    RooAddPdf model("model", "model", RooArgList(excPDF, disPDF),
+                    RooArgList(excScale, disScale));
 
     // Fit the data with minimum logging
     model.fitTo(data,PrintLevel(-1));
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
-    // Print the resulting values
-    cout << endl << "----------------------------------------" << endl;
-    cout << "Exclusive fit scale result: "    << excFitResult.getVal() / excHist->Integral() << endl;
-    cout << "Dissociative fit scale result: " << disFitResult.getVal() / disHist->Integral() << endl;
-    cout <<"----------------------------------------" <<  endl << endl;
+    excHist->Scale(excScale.getVal()/excHist->Integral());
+    disHist->Scale(disScale.getVal()/disHist->Integral());
+
+    RooDataHist newExc("exc", "Exclusive fit", x, excHist);
+    RooDataHist newDis("dis", "Dissociative fit", x, disHist);
+
+    RooRealVar excA("excA", "exclusive A value", 1, 0, 10000);
+    RooRealVar excB("excB", "exclusive B value", 1, 0, 100);
+    RooRealVar disA("disA", "dissociative A value", 1, 0, 10000);
+    RooRealVar disB("disB", "dissociative B value", 1, 0, 100);
+
+    RooGenericPdf excFit("excFit", "excFit", "x*exp(-excB*x*x)",
+                         RooArgSet(x, excB));
+    RooGenericPdf disFit("disFit", "disFit", "x*exp(-disB*x*x)",
+                         RooArgSet(x, disB));
+
+    disFit.fitTo(newDis, PrintLevel(-1));
+    excFit.fitTo(newExc, PrintLevel(-1));
+    RooAddPdf res("res", "res", RooArgList(excFit, disFit),
+                  RooArgList(excA, disA));
+    res.fitTo(data, PrintLevel(-1));
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
-    auto legend = new TLegend(0.45,.68,.88,0.87);
-    legend->SetBorderSize(0);
-    legend->SetTextSize(0.027);
-    auto *histStack = new THStack(sampleName.c_str(),
-                          string(sampleName + "_" + mass + ";" + selSample.description + " (" + selSample.unit + ")").c_str());
+    RooPlot *xFrame = x.frame(Title("Fitting results"));
 
-    dataHist->SetMarkerStyle(20);
-    dataHist->SetLineColor(kBlack);
-    legend->AddEntry(dataHist, "Data", "lp");
+    newDis.plotOn(xFrame, Invisible());
+    disFit.plotOn(xFrame, Name("disFit"),LineColor(kRed));
 
-    // Create a stack of histograms containing the generated datasets
-    for (const auto & simData : dataset) {
-        file = sampleName + "_" + mass + "_" + simData.name;
-        TH1 *h(dataCluster->Get<TH1>(file.c_str()));
+    newExc.plotOn(xFrame, Invisible());
+    excFit.plotOn(xFrame,Name("excFit"), LineColor(kBlue));
 
-        // If the histogram is empty, skit it
-        if (h->Integral() == 0)
-            continue;
+    data.plotOn(xFrame, Name("data"));
+    res.plotOn(xFrame, Name("Final fit"), LineColor(kBlack));
 
-        // Personalize the histogram
-        h->SetLineColor(kBlack);
-        if (simData.isUsed == 0) h->Scale(disFitResult.getVal() / disHist->Integral());
-        else h->Scale(excFitResult.getVal() / excHist->Integral());
-        h->SetFillColor(simData.color);
-
-        // Add a legend to the histogram (if its needed)
-        if (!simData.legend.empty())
-            legend->AddEntry(h, simData.legend.c_str(), "f");
-
-        // Add the histogram to a stack
-        histStack->Add(h);
-    }
-
-    if (histStack->GetMaximum() < dataHist->GetMaximum() + dataHist->GetBinError(dataHist->GetMaximumBin()) * 1.3)
-        histStack->SetMaximum(dataHist->GetMaximum() + dataHist->GetBinError(dataHist->GetMaximumBin()) * 1.3);
-    dataHist  ->Draw("e1x0p SAME");
-    histStack->Draw("HIST");
-
-    // Plot the data and resulting fit histogram
-    RooPlot* xFrame = x.frame(Title("Fitting result"));
-    data.plotOn(xFrame, XErrorSize(0), DrawOption("P"));
-    model.plotOn(xFrame, LineWidth(3));
+    gPad->SetLeftMargin(0.15);
+    xFrame->GetYaxis()->SetTitleOffset(1.4);
+    xFrame->SetMinimum(0);
     xFrame->Draw("SAME");
 
-    // Draw the legend and plot the graph
-    legend->Draw("SAME");
+    auto *leg1 = new TLegend(0.65,0.73,0.86,0.87);
+    leg1->SetFillColor(kWhite);
+    leg1->SetLineColor(kWhite);
+    leg1->AddEntry("data","Data", "P");
+    leg1->AddEntry("disFit","Dissociative fit","L");
+    leg1->AddEntry("excFit","Exclusive fit", "L");
+    leg1->AddEntry("dataFit","Summed fit", "L");
+    leg1->Draw();
 
-    // Save the plots
-    c->SaveAs("./fitHist.png");
+    c->SaveAs("./fitSplitHist.png");
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    // Print the resulting values
+    cout <<"----------------------------------------" <<  endl;
+    cout << "Dissociative A: " << disA.getVal() << endl;
+    cout << "Dissociative B: " << disB.getVal() << endl;
+    cout <<"----------------------------------------" <<  endl;
+    cout << "Exclusive A: " << excA.getVal() << endl;
+    cout << "Exclusive B: " << excB.getVal() << endl;
+    cout <<"----------------------------------------" <<  endl;
+    cout << "Formula: A*x*exp(-B*x*x)" << endl;
+    cout <<"----------------------------------------" <<  endl;
 
 }
