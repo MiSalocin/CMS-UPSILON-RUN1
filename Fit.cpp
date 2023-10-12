@@ -1,17 +1,16 @@
-#include <RooFitResult.h>
-#include "TF1.h"
-#include "TH1.h"
-#include "TFile.h"
-#include "TCanvas.h"
-#include "TLegend.h"
-#include "RooPlot.h"
-#include "RooRealVar.h"
-#include "RooHistPdf.h"
-#include "RooAddPdf.h"
-#include "TTreeReaderArray.h"
-#include "RooGenericPdf.h"
-
+#include <RooGenericPdf.h>
+#include <RooRealVar.h>
+#include <TPaveStats.h>
 #include "datatypes.h"
+#include <RooAddPdf.h>
+#include <RooPlot.h>
+#include <TCanvas.h>
+#include <TLegend.h>
+#include <TLatex.h>
+#include <TStyle.h>
+#include <TFile.h>
+#include <TF1.h>
+#include <TH1.h>
 
 using namespace std;
 using namespace RooFit;
@@ -113,83 +112,111 @@ void Fit() {
     RooDataHist exc("exc", "Exclusive fit", x, excHist);
     RooDataHist dis("dis", "Dissociative fit", x, disHist);
 
-    // Then make probability density functions out of the histograms
-    RooHistPdf excPDF("excPdf", "Exclusive PDF", x, exc);
-    RooHistPdf disPDF("disPdf", "Dissociative PDF", x, dis);
-
-    // Create a model that will fit the data using the histogram templates
-    RooRealVar excScale("excScale", "Exclusive scale", 5, 0, 1000);
-    RooRealVar disScale("disScale", "Dissociative scale", 5, 0, 1000);
-    RooAddPdf model("model", "model", RooArgList(excPDF, disPDF),
-                    RooArgList(excScale, disScale));
-
-    // Fit the data with minimum logging
-    model.fitTo(data,PrintLevel(-1));
-
-///////////////////////////////////////////////////////////////////////////////////////////////
-
-    excHist->Scale(excScale.getVal()/excHist->Integral());
-    disHist->Scale(disScale.getVal()/disHist->Integral());
-
-    RooDataHist newExc("exc", "Exclusive fit", x, excHist);
-    RooDataHist newDis("dis", "Dissociative fit", x, disHist);
-
+    // Create parameters variables
     RooRealVar excA("excA", "exclusive A value", 1, 0, 10000);
     RooRealVar excB("excB", "exclusive B value", 1, 0, 100);
     RooRealVar disA("disA", "dissociative A value", 1, 0, 10000);
     RooRealVar disB("disB", "dissociative B value", 1, 0, 100);
 
+    // Create two fit templates
     RooGenericPdf excFit("excFit", "excFit", "x*exp(-excB*x*x)",
                          RooArgSet(x, excB));
     RooGenericPdf disFit("disFit", "disFit", "x*exp(-disB*x*x)",
                          RooArgSet(x, disB));
 
-    disFit.fitTo(newDis, PrintLevel(-1));
-    excFit.fitTo(newExc, PrintLevel(-1));
-    RooAddPdf res("res", "res", RooArgList(excFit, disFit),
-                  RooArgList(excA, disA));
-    res.fitTo(data, PrintLevel(-1));
+    // fit them to the histograms, defining the "B" parameter
+    disFit.fitTo(dis, PrintLevel(-1));
+    excFit.fitTo(exc, PrintLevel(-1));
+
+    // Create a new PDF that's the sum of the other 2 fitted
+    RooAddPdf finalPDF("finalPDF", "finalPDF", RooArgList(excFit, disFit),
+                       RooArgList(excA, disA));
+    finalPDF.fitTo(data, PrintLevel(-1));
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
+    // Create a function that has the fitting parameters
+    auto *function = new TF1("finalFunc", "[0]*x*exp(-[1]*x*x) + [2]*x*exp(-[3]*x*x)", 0, 5);
+    auto *f2 = new TF1("f2", "[0]*x*exp(-[1]*x*x)", 0, 5);
+    auto *leg1 = new TLegend(0.60,0.75,0.85,0.88);
+    leg1->SetTextSize(0.025);
+
+    // Plot the fitted data in a frame
     RooPlot *xFrame = x.frame(Title("Fitting results"));
+    data.plotOn(xFrame,Name("data"));
+    finalPDF.plotOn(xFrame, Name("sumfit"), LineColor(kBlack));
+    leg1->AddEntry("data","Data", "P");
+    leg1->AddEntry("sumfit","Summed fit", "L");
 
-    newDis.plotOn(xFrame, Invisible());
-    disFit.plotOn(xFrame, Name("disFit"),LineColor(kRed));
-
-    newExc.plotOn(xFrame, Invisible());
-    excFit.plotOn(xFrame,Name("excFit"), LineColor(kBlue));
-
-    data.plotOn(xFrame, Name("data"));
-    res.plotOn(xFrame, Name("Final fit"), LineColor(kBlack));
-
-    gPad->SetLeftMargin(0.15);
+    // Draw the frame
     xFrame->GetYaxis()->SetTitleOffset(1.4);
     xFrame->SetMinimum(0);
-    xFrame->Draw("SAME");
+    gPad->SetLeftMargin(0.15);
+    xFrame->Draw();
 
-    auto *leg1 = new TLegend(0.65,0.73,0.86,0.87);
-    leg1->SetFillColor(kWhite);
-    leg1->SetLineColor(kWhite);
-    leg1->AddEntry("data","Data", "P");
-    leg1->AddEntry("disFit","Dissociative fit","L");
-    leg1->AddEntry("excFit","Exclusive fit", "L");
-    leg1->AddEntry("dataFit","Summed fit", "L");
+    // Variable that holds the fit results and errors
+    double par[4][2];
+
+    // Setup variable values
+    f2->SetParameters(1,disB.getVal());
+    par[0][0] = disA.getVal() / (f2->Integral(0, 2) * 10);
+    par[0][1] = disA.getError() / (f2->Integral(0, 2) * 10);
+    par[1][0] = disB.getVal();
+    par[1][1] = disB.getError();
+    f2->SetParameters(1, excB.getVal());
+    par[2][0] = excA.getVal() / (f2->Integral(0, 2) * 10);
+    par[2][1] = excA.getError() / (f2->Integral(0, 2) * 10);
+    par[3][0] = excB.getVal();
+    par[3][1] = excB.getError();
+
+    // Draw dissociative fit
+    f2->SetParameters(par[0][0], par[1][0]);
+    f2->SetLineColor(kBlue);
+    f2->DrawClone("SAME");
+    leg1->AddEntry(f2->Clone(),"Exclusive fit", "L");
+
+    // Draw exclusive fit
+    f2->SetParameters(par[2][0], par[3][0]);
+    f2->SetLineColor(kGreen);
+    f2->Draw("SAME");
+    leg1->AddEntry(f2,"Dissociative fit","L");
+
+    // Draw legend
+    leg1->SetFillColorAlpha(0, 0);
+    leg1->SetLineColorAlpha(0, 0);
     leg1->Draw();
 
+    // Create a statistics window using TPaveStats
+    auto *stats = new TPaveStats();
+
+    // Set the text and position of the TPaveStats object.
+    stats->SetX1NDC(0.8);
+    stats->SetY1NDC(0.65);
+    stats->SetX2NDC(0.95);
+    stats->SetY2NDC(0.95);
+    stats->SetTextSize(0.025);
+
+    // Set model function parameters
+    function->SetParameter(0, par[0][0]);
+    function->SetParameter(1, par[1][0]);
+    function->SetParameter(2, par[2][0]);
+    function->SetParameter(3, par[3][0]);
+
+    // Set up the statistics window.
+    stats->AddText("Results");
+    stats->AddText(("Integral = " + to_string(function->Integral(0,3)*10)).c_str());
+    stats->AddText(("Mean = " + to_string(function->Mean(0,3))).c_str());
+    auto *text = new TLatex();
+    text->SetText(0,0,"±");
+    stats->AddText(("Dis. A = "+to_string(par[0][0]).substr(0,5)+" #pm "+to_string(par[0][1]).substr(0,5)).c_str());
+    stats->AddText(("Dis. B = "+to_string(par[1][0]).substr(0,5)+" #pm "+to_string(par[1][1]).substr(0,5)).c_str());
+    stats->AddText(("Exc. A = "+to_string(par[2][0]).substr(0,5)+" #pm "+to_string(par[2][1]).substr(0,5)).c_str());
+    stats->AddText(("Exc. B = "+to_string(par[3][0]).substr(0,5)+" #pm "+to_string(par[3][1]).substr(0,5)).c_str());
+
+    // Add the TPaveStats object to the canvas.
+    stats->Draw();
+
+    // Save the plot
     c->SaveAs("./fitSplitHist.png");
-
-///////////////////////////////////////////////////////////////////////////////////////////////
-
-    // Print the resulting values
-    cout <<"----------------------------------------" <<  endl;
-    cout << "Dissociative A: " << disA.getVal() << endl;
-    cout << "Dissociative B: " << disB.getVal() << endl;
-    cout <<"----------------------------------------" <<  endl;
-    cout << "Exclusive A: " << excA.getVal() << endl;
-    cout << "Exclusive B: " << excB.getVal() << endl;
-    cout <<"----------------------------------------" <<  endl;
-    cout << "Formula: A*x*exp(-B*x*x)" << endl;
-    cout <<"----------------------------------------" <<  endl;
 
 }
